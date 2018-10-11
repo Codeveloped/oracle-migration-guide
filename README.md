@@ -145,7 +145,7 @@ SELECT directory_path FROM dba_directories WHERE directory_name = 'DATA_PUMP_DIR
 Now exit `sqlplus` and the container by hitting Ctrl-D or typing `exit`.
 
 Copy over the dump to the container:
-<pre><code>$ docker cp ~/ORACLEDATA.dmp oracledb:<b>&lt;path from previous step&gt;/ORACLEDATA.dmp
+<pre><code>$ docker cp ~/ORACLEDATA.dmp oracledb:<b>&lt;path from previous step&gt;</b>/ORACLEDATA.dmp
 </code></pre>
 
 Now it's time to import the data. Shell into the container, execute `sqlplus` and run the following query:
