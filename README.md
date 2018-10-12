@@ -92,15 +92,35 @@ Now create an other directory for data pumping by executing this query:
 <pre><code>CREATE DIRECTORY dpump_dir1 AS '<b>&lt;the path you read out previously&gt;</b>';
 </code></pre>
 
-Exit `sqlplus` by hitting Ctrl-D or typing `exit`. Now it's time to start the data pump export. Execute the following;
-```sh
-$ expdp DIRECTORY=dpump_dir1 DUMPFILE=ORACLEDATA.dmp FULL=y
+Create an export user and grant it the appropiate permissions:
+
+```sql
+ALTER SESSION SET "_ORACLE_SCRIPT"=true;
+
+CREATE USER EXPORT
+IDENTIFIED BY password
+DEFAULT TABLESPACE USERS
+TEMPORARY TABLESPACE TEMP
+ACCOUNT UNLOCK;
+
+GRANT CREATE SESSION TO EXPORT;
+GRANT CREATE TABLE TO EXPORT;
+ALTER USER EXPORT QUOTA UNLIMITED ON USERS;
+GRANT EXP_FULL_DATABASE TO EXPORT;
+GRANT CREATE USER TO EXPORT;
+GRANT READ, WRITE ON DIRECTORY dpump_dir1 TO EXPORT;
+GRANT GRANT ANY ROLE TO EXPORT;
 ```
 
-When that process is finished, copy the created database file via `scp`.
+Exit `sqlplus` by hitting Ctrl-D or typing `exit`. Now it's time to start the data pump export. **Do NOT login as `sysdba` during this step.** Login as regular user, the same user the application uses, preferably.
+```sh
+$ expdp export/password schemas=<the table/schema your application needs> directory=dpump_dir1 dumpfile=expdp_`echo $ORACLE_SID`_%U_`date +%Y%m%d`.dmp
+```
+
+When that process is finished, copy the created database pump file via `scp`.
 
 ```sh
-$ scp oracle.example.com:/u01/app/oracle/admin/ORCL/dpdump/ORACLEDATA.dmp ~/ORACLEDATA.dmp
+$ scp oracle.example.com:/u01/app/oracle/admin/ORCL/dpdump/expdp_`echo $ORACLE_SID`_01_20181012.dmp ~/ORACLEDATA.dmp
 ```
 
 On the host/instance you'd like to migrate to, create an directory that will hold the database data. This will be mounted as a volume inside the Docker container.
@@ -155,16 +175,57 @@ Copy over the dump to the container:
 
 If it spits out an error 'the directory does not exist', shell into the container and create the directory via `mkdir`.
 
-Now it's time to import the data. Shell into the container, execute `sqlplus` and run the following query:
+Now it's time to prep the database for importing the data. Shell into the container, execute `sqlplus` and run the following queries:
 
 ```sql
-CREATE DIRECTORY dpump_dir1 AS '<path from previous step>';
+ALTER SESSION SET "_ORACLE_SCRIPT"=true;
+
+CREATE DIRECTORY dpump_dir1 AS '/opt/oracle/admin/<database SID>/dpdump/';
+
+CREATE USER EXPORT
+IDENTIFIED BY password
+DEFAULT TABLESPACE USERS
+TEMPORARY TABLESPACE TEMP
+ACCOUNT UNLOCK;
+
+GRANT CREATE SESSION TO EXPORT;
+GRANT CREATE TABLE TO EXPORT;
+ALTER USER EXPORT QUOTA UNLIMITED ON USERS;
+GRANT EXP_FULL_DATABASE TO EXPORT;
+GRANT CREATE USER TO EXPORT;
+GRANT READ, WRITE ON DIRECTORY dpump_dir1 TO EXPORT;
+
+CREATE USER IMPORT
+IDENTIFIED BY password
+DEFAULT TABLESPACE USERS
+TEMPORARY TABLESPACE TEMP
+ACCOUNT UNLOCK;
+
+GRANT CREATE SESSION TO IMPORT;
+GRANT CREATE TABLE TO IMPORT;
+ALTER USER IMPORT QUOTA UNLIMITED ON USERS;
+GRANT IMP_FULL_DATABASE TO IMPORT;
+GRANT CONNECT TO IMPORT;
+ALTER USER IMPORT DEFAULT ROLE ALL;
+GRANT RESOURCE TO IMPORT;
+GRANT CREATE USER TO IMPORT;
+GRANT READ, WRITE ON DIRECTORY dpump_dir1 TO IMPORT;
+GRANT GRANT ANY ROLE TO IMPORT;
+GRANT CREATE DATABASE LINK TO IMPORT;
+GRANT CONNECT, RESOURCE, DBA TO IMPORT;
+GRANT CREATE SESSION TO IMPORT;
+
+CREATE USER "<database user your application uses>"
+IDENTIFIED BY "<database password your application uses>"
+DEFAULT TABLESPACE USERS
+TEMPORARY TABLESPACE TEMP
+ACCOUNT UNLOCK;
 ```
 
 Exit `sqlplus` and execute the following command:
 
 ```sh
-impdp DIRECTORY=dpump_dir1 DUMPFILE=ORACLEDATA.dmp
+impdp import/password schemas=<the table/schema your application needs> directory=dpump_dir1 dumpfile=expdp_<DATABASE SID>_01_20181012.dmp
 ```
 
 When asked for user credentials, enter `/ as sysdba`.
